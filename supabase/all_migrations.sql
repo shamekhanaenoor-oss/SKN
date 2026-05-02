@@ -265,3 +265,160 @@ INSERT INTO public.school_profile (school_name) SELECT '' WHERE NOT EXISTS (SELE
 -- ============================================================
 -- END OF SCRIPT
 -- ============================================================
+-- اجازه دادن به همه staff برای دیدن همه profiles
+DROP POLICY IF EXISTS "profiles_select_admin" ON public.profiles;
+DROP POLICY IF EXISTS "admins view all profiles" ON public.profiles;
+
+CREATE POLICY "staff view all profiles" ON public.profiles 
+  FOR SELECT TO authenticated 
+  USING (true);
+
+CREATE POLICY "staff update profiles" ON public.profiles 
+  FOR UPDATE TO authenticated 
+  USING (true) 
+  WITH CHECK (true);
+
+-- اضافه کردن is_active اگر وجود ندارد
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+-- فعال کردن pgcrypto extension
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ایجاد function برای ساختن کاربر
+CREATE OR REPLACE FUNCTION public.create_user_with_role(
+  p_email TEXT,
+  p_password TEXT,
+  p_full_name TEXT,
+  p_roles TEXT[]
+) RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, extensions AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  INSERT INTO auth.users (
+    id, email, encrypted_password, email_confirmed_at,
+    raw_user_meta_data, created_at, updated_at,
+    aud, role, instance_id
+  ) VALUES (
+    gen_random_uuid(),
+    p_email,
+    extensions.crypt(p_password, extensions.gen_salt('bf')),
+    now(),
+    jsonb_build_object('full_name', p_full_name),
+    now(), now(),
+    'authenticated', 'authenticated',
+    '00000000-0000-0000-0000-000000000000'
+  ) RETURNING id INTO v_user_id;
+
+  INSERT INTO public.user_roles (user_id, role)
+  SELECT v_user_id, unnest(p_roles)::public.app_role;
+
+  INSERT INTO public.profiles (id, full_name, is_active)
+  VALUES (v_user_id, p_full_name, true)
+  ON CONFLICT (id) DO UPDATE SET full_name = p_full_name;
+
+  RETURN v_user_id;
+END $$;
+
+GRANT EXECUTE ON FUNCTION public.create_user_with_role TO authenticated;
+-- فعال کردن pgcrypto
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- اضافه کردن is_active به profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+-- اصلاح RLS profiles
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_select_admin" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_all_admin" ON public.profiles;
+DROP POLICY IF EXISTS "staff view all profiles" ON public.profiles;
+DROP POLICY IF EXISTS "staff update profiles" ON public.profiles;
+
+CREATE POLICY "profiles_select" ON public.profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY "profiles_insert" ON public.profiles FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "profiles_update" ON public.profiles FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "profiles_delete" ON public.profiles FOR DELETE TO authenticated USING (true);
+-- جدول نام کاربری‌ها
+CREATE TABLE IF NOT EXISTS public.user_usernames (
+  username TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.user_usernames ENABLE ROW LEVEL SECURITY;
+
+-- همه می‌توانند بخوانند (برای login)
+CREATE POLICY "anyone read usernames" ON public.user_usernames 
+  FOR SELECT TO anon, authenticated USING (true);
+
+-- authenticated می‌توانند اضافه/ویرایش کنند
+CREATE POLICY "auth manage usernames" ON public.user_usernames 
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- اضافه کردن founder
+INSERT INTO public.user_usernames (username, email) 
+VALUES ('founder', 'founder@admin.local') 
+ON CONFLICT DO NOTHING;
+
+-- فعال کردن pgcrypto برای ایجاد کاربر
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- function برای ایجاد کاربر
+CREATE OR REPLACE FUNCTION public.create_user_with_role(
+  p_email TEXT,
+  p_password TEXT,
+  p_full_name TEXT,
+  p_roles TEXT[]
+) RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, extensions AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  INSERT INTO auth.users (
+    id, email, encrypted_password, email_confirmed_at,
+    raw_user_meta_data, created_at, updated_at,
+    aud, role, instance_id
+  ) VALUES (
+    gen_random_uuid(),
+    p_email,
+    extensions.crypt(p_password, extensions.gen_salt('bf')),
+    now(),
+    jsonb_build_object('full_name', p_full_name),
+    now(), now(),
+    'authenticated', 'authenticated',
+    '00000000-0000-0000-0000-000000000000'
+  ) RETURNING id INTO v_user_id;
+
+  INSERT INTO public.user_roles (user_id, role)
+  SELECT v_user_id, unnest(p_roles)::public.app_role;
+
+  INSERT INTO public.profiles (id, full_name, is_active)
+  VALUES (v_user_id, p_full_name, true)
+  ON CONFLICT (id) DO UPDATE SET full_name = p_full_name;
+
+  RETURN v_user_id;
+END $$;
+
+GRANT EXECUTE ON FUNCTION public.create_user_with_role TO authenticated;
+
+-- اضافه کردن is_active به profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+-- RLS profiles
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_select_admin" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_all_admin" ON public.profiles;
+DROP POLICY IF EXISTS "staff view all profiles" ON public.profiles;
+DROP POLICY IF EXISTS "staff update profiles" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_select" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_insert" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_update" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_delete" ON public.profiles;
+
+CREATE POLICY "profiles_select" ON public.profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY "profiles_insert" ON public.profiles FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "profiles_update" ON public.profiles FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "profiles_delete" ON public.profiles FOR DELETE TO authenticated USING (true);

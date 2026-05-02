@@ -74,27 +74,18 @@ export default function UsersPage() {
       if (form.password.length < 6) throw new Error("رمز عبور باید حداقل ۶ کاراکتر باشد");
       if (selectedRoles.length === 0) throw new Error("حداقل یک نقش انتخاب کنید");
 
-      const { data: { session: currentSession } } = await (supabase as any).auth.getSession();
-      const { data: authData, error: authError } = await (supabase as any).auth.signUp({
-        email: form.email, password: form.password,
-        options: { data: { full_name: form.full_name || form.email } },
+      // استفاده از RPC function برای ایجاد کاربر بدون تغییر session
+      const { data: userId, error } = await (supabase as any).rpc("create_user_with_role", {
+        p_email: form.email,
+        p_password: form.password,
+        p_full_name: form.full_name || form.username,
+        p_roles: selectedRoles,
       });
-      if (authError) throw authError;
-      const userId = authData?.user?.id;
+
+      if (error) throw error;
       if (!userId) throw new Error("کاربر ایجاد نشد");
 
-      if (currentSession && authData?.session) {
-        await (supabase as any).auth.setSession({
-          access_token: currentSession.access_token,
-          refresh_token: currentSession.refresh_token,
-        });
-      }
-      for (const role of selectedRoles) {
-        await (supabase as any).from("user_roles").insert({ user_id: userId, role });
-      }
-      if (form.full_name) {
-        await (supabase as any).from("profiles").upsert({ id: userId, full_name: form.full_name, is_active: true });
-      }
+      // ذخیره نام کاربری در localStorage برای صفحه ورود
       try {
         const extra = JSON.parse(localStorage.getItem("username_map") ?? "{}");
         extra[form.username.trim().toLowerCase()] = form.email;

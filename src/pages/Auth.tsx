@@ -53,21 +53,42 @@ export default function Auth() {
     e.preventDefault();
 
     const trimmedUsername = username.trim().toLowerCase();
-    const usernameMap = getUsernameMap();
-    // اگر در map بود از ایمیل map استفاده کن، وگرنه خود username را به عنوان ایمیل امتحان کن
-    const email = usernameMap[trimmedUsername] ?? (trimmedUsername.includes("@") ? trimmedUsername : null);
+    setLoading(true);
+
+    // اول از جدول user_usernames در Supabase بخوان
+    let email: string | null = null;
+
+    // اگر ایمیل مستقیم وارد شده
+    if (trimmedUsername.includes("@")) {
+      email = trimmedUsername;
+    } else {
+      // از Supabase بخوان
+      const { data: mapping } = await (supabase as any)
+        .from("user_usernames")
+        .select("email")
+        .eq("username", trimmedUsername)
+        .maybeSingle();
+
+      if (mapping?.email) {
+        email = mapping.email;
+      } else {
+        // fallback به localStorage
+        const localMap = getUsernameMap();
+        email = localMap[trimmedUsername] ?? null;
+      }
+    }
 
     if (!email) {
+      setLoading(false);
       toast.error("نام کاربری یافت نشد");
       return;
     }
 
     if (password.length < 6) {
+      setLoading(false);
       toast.error("رمز عبور حداقل ۶ کاراکتر باشد");
       return;
     }
-
-    setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -76,7 +97,6 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
-      // بررسی فعال بودن کاربر
       const { data: profile } = await (supabase as any)
         .from("profiles")
         .select("is_active, full_name")
@@ -85,8 +105,7 @@ export default function Auth() {
 
       if (profile && profile.is_active === false) {
         await supabase.auth.signOut();
-        setLoading(false);
-        toast.error("حساب کاربری شما غیرفعال شده است. با مدیر تماس بگیرید.");
+        toast.error("حساب کاربری شما غیرفعال شده است.");
         return;
       }
 

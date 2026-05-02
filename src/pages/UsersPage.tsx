@@ -85,7 +85,12 @@ export default function UsersPage() {
       if (error) throw error;
       if (!userId) throw new Error("کاربر ایجاد نشد");
 
-      // ذخیره نام کاربری در localStorage برای صفحه ورود
+      // ذخیره نام کاربری در Supabase (برای همه device ها)
+      await (supabase as any).from("user_usernames").upsert({
+        username: form.username.trim().toLowerCase(),
+        email: form.email,
+      });
+      // ذخیره در localStorage هم (fallback)
       try {
         const extra = JSON.parse(localStorage.getItem("username_map") ?? "{}");
         extra[form.username.trim().toLowerCase()] = form.email;

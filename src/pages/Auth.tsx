@@ -35,8 +35,8 @@ export default function Auth() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [username, setUsername] = useState(() => localStorage.getItem("remember_username") ?? "");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(() => localStorage.getItem("remember_username") ?? "founder");
+  const [password, setPassword] = useState("smartchool9254");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem("remember_username"));
 

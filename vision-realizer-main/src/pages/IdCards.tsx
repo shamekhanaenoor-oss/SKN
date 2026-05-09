@@ -1,170 +1,331 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+// @ts-nocheck
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import PageHeader from "@/components/PageHeader";
+import { useAppState, getCategoryTemplate } from "@/lib/store";
+import { CardPreview } from "@/components/CardPreview";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Printer, Search, Loader2, School } from "lucide-react";
+import { Printer, Search, Loader2 } from "lucide-react";
+import type { Person, Category } from "@/lib/types";
 
-type EntityType = "students" | "teachers" | "staff";
+type EntityType = "students" | "staff" | "drivers";
 
-interface CardData {
-  id: string;
-  code: string;
-  name: string;
-  subtitle?: string;
-  phone?: string;
-  blood?: string;
-  address?: string;
-  photo?: string;
-  emergency?: string;
-}
-
-function mapRow(t: EntityType, r: any): CardData {
-  if (t === "students") return {
-    id: r.id, code: r.student_code, name: r.full_name,
-    subtitle: r.father_name ? `ولد ${r.father_name}` : undefined,
-    phone: r.phone, blood: r.blood_group, address: r.address || r.province,
-    photo: r.photo_url, emergency: r.father_name,
-  };
-  if (t === "teachers") return {
-    id: r.id, code: r.employee_code, name: r.full_name,
-    subtitle: r.specialization || "معلم",
-    phone: r.phone, address: r.address, photo: r.photo_url,
-  };
-  return {
-    id: r.id, code: r.employee_code, name: r.full_name,
-    subtitle: r.position || "کارمند",
-    phone: r.phone, address: r.address, photo: r.photo_url,
-  };
-}
+const TABLE_FOR: Record<EntityType, string> = {
+  students: "students",
+  staff: "staff",
+  drivers: "transport_routes",
+};
 
 const TYPE_LABEL: Record<EntityType, string> = {
   students: "کارت شاگرد",
-  teachers: "کارت معلم",
   staff: "کارت کارمند",
+  drivers: "کارت راننده",
 };
 
-export default function IdCardsPage() {
+function normalizeCardKey(value?: string) {
+  return (value || "")
+    .normalize("NFKC")
+    .replace(/[\u200c\u200d\s\-_]+/g, "")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .trim()
+    .toLowerCase();
+}
+
+function personCardKey(p: Person) {
+  const id = normalizeCardKey(p.idNumber);
+  if (id) return `id:${id}`;
+  return `person:${normalizeCardKey(p.name)}|${normalizeCardKey(p.fatherName)}|${normalizeCardKey(p.className)}`;
+}
+
+export default function IdCardsPageDefault() {
+  return <IdCardsPage />;
+}
+
+function IdCardsPage() {
+  const state = useAppState();
   const [tab, setTab] = useState<EntityType>("students");
   const [search, setSearch] = useState("");
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["idcards", tab],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from(tab).select("*").limit(500);
-      if (error) throw error;
-      return data ?? [];
-    },
+  useEffect(() => {
+    let cancelled = false;
+    const table = TABLE_FOR[tab];
+
+    async function load() {
+      setLoading(true);
+      try {
+        if (tab === "students") {
+          const { data } = await (supabase as any)
+            .from("students")
+            .select(
+              "*, classes:current_class_id(name), student_transport(is_active, transport_routes(route_name, vehicle_number))",
+            )
+            .eq("is_active", true)
+            .limit(500);
+          if (!cancelled) setRows(data || []);
+        } else {
+          const { data } = await (supabase as any).from(table).select("*").limit(500);
+          if (!cancelled) setRows(data || []);
+        }
+      } catch {
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+
+    // Realtime: auto-refresh when DB rows are added/updated/removed
+    const channel = (supabase as any)
+      .channel(`idcards-${table}`)
+      .on("postgres_changes", { event: "*", schema: "public", table }, () => load())
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      try {
+        (supabase as any).removeChannel(channel);
+      } catch {}
+    };
+  }, [tab]);
+
+  const localCat: Category =
+    tab === "students" ? "students" : tab === "drivers" ? "drivers" : "staff";
+  const template = getCategoryTemplate(state, localCat);
+
+  const dbPeople: Person[] = rows.map((r) => {
+    if (tab === "students") {
+      const activeTransport = (r.student_transport || []).find((t: any) => t.is_active);
+      const route = activeTransport?.transport_routes;
+      const transportLabel = route
+        ? `${route.route_name || ""}${route.vehicle_number ? " - " + route.vehicle_number : ""}`
+        : "";
+      return {
+        id: `db-${r.id}`,
+        category: "students" as Category,
+        idNumber: r.student_code || "",
+        name: r.full_name || "",
+        fatherName: r.father_name || "",
+        className: r.classes?.name || "",
+        transport: transportLabel,
+        parentPhone: r.father_phone || r.mother_phone || r.phone || "",
+        photo: r.photo_url,
+      };
+    }
+    if (tab === "drivers") {
+      return {
+        id: `db-${r.id}`,
+        category: "drivers" as Category,
+        name: r.driver_name || r.route_name || "",
+        fatherName: "",
+        vehicleNumber: r.vehicle_number,
+        licenseNumber: r.license_number,
+        route: r.route_name,
+        phone: r.driver_phone,
+        photo: r.photo_url,
+      };
+    }
+    // staff
+    return {
+      id: `db-${r.id}`,
+      category: "staff" as Category,
+      name: r.full_name || "",
+      fatherName: r.father_name || "",
+      position: r.position || r.department || "کارمند",
+      phone: r.phone,
+      photo: r.photo_url,
+    };
   });
 
-  const cards = rows.map((r: any) => mapRow(tab, r))
-    .filter((c: CardData) => !search || c.name?.includes(search) || c.code?.includes(search));
+  // Deduplicate by idNumber/name to avoid showing the same person twice
+  // (DB rows are the source of truth; local people only shown if not present in DB)
+  const seen = new Set<string>();
+  const allPeople: Person[] = [...dbPeople, ...state.people.filter((p) => p.category === localCat)]
+    .filter((p) => {
+      const key = personCardKey(p);
+      if (key === "person:||") return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .filter((p) => !search || p.name?.includes(search));
 
-  function handlePrint() {
-    window.print();
-  }
+  // Students = CR80 horizontal (5/page). Teachers & drivers = larger vertical (3/page).
+  const MM_PX = 3.7795275591;
+  const isVertical = tab !== "students";
+  const showBackSide = false;
+  const BOX_W_MM = isVertical ? 60 : 85.6;
+  const BOX_H_MM = isVertical ? 90 : 54;
+  // Fit card to box keeping the template's real aspect ratio (no distortion)
+  const printScale = Math.min(
+    (BOX_W_MM * MM_PX) / template.width,
+    (BOX_H_MM * MM_PX) / template.height,
+  );
+  const CARD_W_MM = (template.width * printScale) / MM_PX;
+  const CARD_H_MM = (template.height * printScale) / MM_PX;
 
   return (
-    <div>
+    <div className="mx-auto max-w-7xl px-4 py-6">
       <style>{`
         @media print {
-          @page { size: A4; margin: 10mm; }
+          @page { size: A4 portrait; margin: 6mm; }
+          html, body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
-          #print-area { position: absolute; inset: 0; }
+          #print-area {
+            position: absolute;
+            inset: 0;
+            display: block !important;
+            transform: scaleX(-1);
+            transform-origin: center top;
+          }
           .no-print { display: none !important; }
-          .id-card { break-inside: avoid; page-break-inside: avoid; }
+          .screen-only { display: none !important; }
+          .print-only { display: block !important; }
+          .print-row {
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 3mm !important;
+            justify-content: center !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin-bottom: 3mm !important;
+          }
+        }
+        .print-only { display: none; }
+        .print-card-wrap {
+          width: ${CARD_W_MM}mm;
+          height: ${CARD_H_MM}mm;
+          overflow: hidden;
         }
       `}</style>
 
-      <div className="no-print">
-        <PageHeader
-          title="کارت هویت"
-          description="ساخت و چاپ کارت هویت برای شاگردان، معلمان و کارمندان"
-          action={
-            <Button onClick={handlePrint} className="gap-2">
+      <div className="no-print mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h1 className="text-2xl font-bold">کارت هویت</h1>
+            <p className="text-sm text-muted-foreground">
+              چاپ به اندازهٔ استاندارد ({CARD_W_MM.toFixed(1)}×{CARD_H_MM.toFixed(1)}mm) —{" "}
+              {isVertical ? "۳" : "۵"} کارت در یک ورق A4 (پشت و رو)
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a href="/idcard-students">
+              <Button variant="outline" size="sm">
+                شاگردان
+              </Button>
+            </a>
+            <a href="/idcard-staff">
+              <Button variant="outline" size="sm">
+                کارمندان
+              </Button>
+            </a>
+            <a href="/idcard-drivers">
+              <Button variant="outline" size="sm">
+                راننده‌گان
+              </Button>
+            </a>
+            <a href="/idcard-designer">
+              <Button variant="outline" size="sm">
+                دیزاینر کارت
+              </Button>
+            </a>
+            <Button onClick={() => window.print()} className="gap-2">
               <Printer className="w-4 h-4" /> چاپ
             </Button>
-          }
-        />
+          </div>
+        </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as EntityType)} className="mb-4">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as EntityType)} className="mb-4 hidden">
           <TabsList>
             <TabsTrigger value="students">شاگردان</TabsTrigger>
-            <TabsTrigger value="teachers">معلمان</TabsTrigger>
             <TabsTrigger value="staff">کارمندان</TabsTrigger>
+            <TabsTrigger value="drivers">راننده‌گان</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <div className="mb-4 relative max-w-sm">
+        <div className="relative max-w-sm">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="جستجو..." value={search} onChange={(e) => setSearch(e.target.value)} className="pr-10" />
+          <Input
+            placeholder="جستجو..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pr-10"
+          />
         </div>
       </div>
 
-      {isLoading ? (
-        <Card><CardContent className="flex justify-center p-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></CardContent></Card>
-      ) : cards.length === 0 ? (
-        <Card><CardContent className="p-12 text-center text-muted-foreground">هیچ موردی یافت نشد</CardContent></Card>
+      {loading && allPeople.length === 0 ? (
+        <Card>
+          <CardContent className="flex justify-center p-12">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </CardContent>
+        </Card>
+      ) : allPeople.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center text-muted-foreground">
+            هیچ موردی یافت نشد — ابتدا یک شاگرد/کارمند اضافه کنید
+          </CardContent>
+        </Card>
       ) : (
-        <div id="print-area" className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:grid-cols-2">
-          {cards.map((c: CardData) => (
-            <IdCard key={c.id} data={c} typeLabel={TYPE_LABEL[tab]} />
-          ))}
-        </div>
+        <>
+          {/* Screen preview */}
+          <div className="screen-only flex flex-wrap items-start justify-center gap-3">
+            {allPeople.map((p) => (
+              <div key={p.id} className="flex flex-col gap-2 items-center">
+                <CardPreview template={template} person={p} scale={0.5} />
+                {showBackSide && template.back && (
+                  <CardPreview
+                    template={{
+                      ...template,
+                      fields: template.back.fields,
+                      background: template.back.background,
+                    }}
+                    person={p}
+                    scale={0.5}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Print layout: 5 cards per page, front + back side-by-side */}
+          <div id="print-area" className="print-only">
+            {allPeople.map((p) => (
+              <div key={p.id} className="print-row">
+                <div className="print-card-wrap">
+                  <CardPreview template={template} person={p} scale={printScale} />
+                </div>
+                {template.back && (
+                  <div className="print-card-wrap">
+                    <CardPreview
+                      template={{
+                        ...template,
+                        fields: template.back.fields,
+                        background: template.back.background,
+                      }}
+                      person={p}
+                      scale={printScale}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
-    </div>
-  );
-}
-
-function IdCard({ data, typeLabel }: { data: CardData; typeLabel: string }) {
-  return (
-    <div className="id-card grid grid-cols-1 md:grid-cols-2 gap-3">
-      {/* Front */}
-      <div className="rounded-xl border-2 border-primary/30 bg-card p-4 shadow-elegant" style={{ aspectRatio: "1.6" }}>
-        <div className="flex items-center justify-between border-b border-border pb-2 mb-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-              <School className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground leading-none">سیستم مکتب</p>
-              <p className="text-xs font-bold leading-tight">{typeLabel}</p>
-            </div>
-          </div>
-          <span className="text-[10px] font-mono text-muted-foreground" dir="ltr">{data.code}</span>
-        </div>
-        <div className="flex gap-3">
-          <div className="w-16 h-20 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0 border">
-            {data.photo ? <img src={data.photo} alt={data.name} className="w-full h-full object-cover" /> : <span className="text-xs text-muted-foreground">عکس</span>}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] text-muted-foreground">نام و تخلص</p>
-            <p className="font-bold text-sm truncate">{data.name}</p>
-            {data.subtitle && (<>
-              <p className="text-[10px] text-muted-foreground mt-1">{data.subtitle.startsWith("ولد") ? "نام پدر" : "سمت"}</p>
-              <p className="text-xs truncate">{data.subtitle.replace("ولد ", "")}</p>
-            </>)}
-          </div>
-        </div>
-      </div>
-
-      {/* Back */}
-      <div className="rounded-xl border-2 border-primary/30 bg-card p-4 shadow-elegant" style={{ aspectRatio: "1.6" }}>
-        <p className="text-xs font-bold border-b border-border pb-2 mb-2 text-primary">اطلاعات تماس</p>
-        <div className="space-y-1.5 text-xs">
-          {data.phone && <div className="flex justify-between"><span className="text-muted-foreground">تلفن:</span><span dir="ltr">{data.phone}</span></div>}
-          {data.blood && <div className="flex justify-between"><span className="text-muted-foreground">گروه خون:</span><span className="font-bold text-destructive">{data.blood}</span></div>}
-          {data.emergency && <div className="flex justify-between"><span className="text-muted-foreground">تماس اضطراری:</span><span>{data.emergency}</span></div>}
-          {data.address && <div><span className="text-muted-foreground">آدرس: </span><span className="text-[11px]">{data.address}</span></div>}
-        </div>
-        <div className="mt-3 pt-2 border-t border-border text-[10px] text-muted-foreground text-center">
-          در صورت پیدا شدن، لطفاً به مکتب بازگردانده شود.
-        </div>
-      </div>
     </div>
   );
 }

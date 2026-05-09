@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,26 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Loader2, UserCog, Trash2, Shield, Pencil, UserCheck, UserX } from "lucide-react";
+import { Plus, Loader2, UserCog, Trash2, Pencil, UserCheck, UserX, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import PageHeader from "@/components/PageHeader";
+import { SECTIONS, PermAction } from "@/lib/permissions";
 
-const ROLES = [
-  { value: "admin",      label: "مدیر سیستم", color: "bg-red-100 text-red-700 border-red-200",
-    permissions: ["✅ دسترسی کامل به همه بخش‌ها","✅ ایجاد و حذف کاربران","✅ تنظیمات سیستم"] },
-  { value: "principal",  label: "مدیر مکتب",  color: "bg-purple-100 text-purple-700 border-purple-200",
-    permissions: ["✅ مشاهده همه بخش‌ها","✅ مدیریت شاگردان و معلمان","✅ مدیریت پرداخت‌ها"] },
-  { value: "accountant", label: "محاسب",       color: "bg-blue-100 text-blue-700 border-blue-200",
-    permissions: ["✅ مدیریت پرداخت‌ها و فیس","✅ مدیریت معاشات","✅ عواید و مصارف"] },
-  { value: "teacher",    label: "معلم",        color: "bg-green-100 text-green-700 border-green-200",
-    permissions: ["✅ مشاهده شاگردان","✅ ثبت حضور و غیاب","✅ ثبت نمرات"] },
-  { value: "librarian",  label: "کتابدار",     color: "bg-yellow-100 text-yellow-700 border-yellow-200",
-    permissions: ["✅ مدیریت کتابخانه","✅ امانت کتاب"] },
+const ACTIONS: { key: PermAction; label: string; col: string }[] = [
+  { key: "view",   label: "مشاهده", col: "can_view" },
+  { key: "add",    label: "افزودن", col: "can_add" },
+  { key: "edit",   label: "ویرایش", col: "can_edit" },
+  { key: "delete", label: "حذف",    col: "can_delete" },
 ];
 
-function RoleBadge({ role }: { role: string }) {
-  const r = ROLES.find(x => x.value === role);
-  return <Badge variant="outline" className={`text-xs ${r?.color ?? ""}`}>{r?.label ?? role}</Badge>;
+type PermsState = Record<string, { view: boolean; add: boolean; edit: boolean; delete: boolean }>;
+
+function emptyPerms(): PermsState {
+  const out: PermsState = {};
+  for (const s of SECTIONS) out[s.key] = { view: false, add: false, edit: false, delete: false };
+  return out;
 }
 
 export default function UsersPage() {
@@ -36,14 +34,12 @@ export default function UsersPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", full_name: "", username: "" });
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [createPerms, setCreatePerms] = useState<PermsState>(emptyPerms());
 
   const [editOpen, setEditOpen] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [editName, setEditName] = useState("");
-  const [editRoles, setEditRoles] = useState<string[]>([]);
-
-  const [showRoleInfo, setShowRoleInfo] = useState<string | null>(null);
+  const [editPerms, setEditPerms] = useState<PermsState>(emptyPerms());
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users-list"],
@@ -51,41 +47,83 @@ export default function UsersPage() {
       const { data: profiles, error } = await (supabase as any)
         .from("profiles").select("id, full_name, is_active").order("full_name");
       if (error) throw error;
-      const { data: roles } = await (supabase as any)
-        .from("user_roles").select("user_id, role");
-      const roleMap: Record<string, string[]> = {};
-      for (const r of roles ?? []) {
-        if (!roleMap[r.user_id]) roleMap[r.user_id] = [];
-        roleMap[r.user_id].push(r.role);
+      const { data: perms } = await (supabase as any)
+        .from("user_permissions").select("user_id, section, can_view");
+      const counts: Record<string, number> = {};
+      for (const r of perms ?? []) {
+        if (r.can_view) counts[r.user_id] = (counts[r.user_id] ?? 0) + 1;
       }
       return (profiles ?? []).map((p: any) => ({
         ...p,
-        is_active: p.is_active !== false, // پیش‌فرض true
-        roles: roleMap[p.id] ?? [],
+        is_active: p.is_active !== false,
+        section_count: counts[p.id] ?? 0,
       }));
     },
   });
 
-  // ایجاد کاربر
+  // بارگذاری دسترسی‌های کاربر هنگام ویرایش
+  useEffect(() => {
+    if (!editOpen || !editUser) return;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("user_permissions").select("*").eq("user_id", editUser.id);
+      const next = emptyPerms();
+      for (const r of data ?? []) {
+        if (next[r.section]) {
+          next[r.section] = {
+            view: !!r.can_view, add: !!r.can_add,
+            edit: !!r.can_edit, delete: !!r.can_delete,
+          };
+        }
+      }
+      setEditPerms(next);
+    })();
+  }, [editOpen, editUser]);
+
+  async function savePerms(userId: string, perms: PermsState) {
+    // پاک کردن قبلی و درج جدید (فقط بخش‌هایی که حداقل یک تیک دارند)
+    await (supabase as any).from("user_permissions").delete().eq("user_id", userId);
+    const rows = SECTIONS
+      .filter((s) => {
+        const p = perms[s.key];
+        return p && (p.view || p.add || p.edit || p.delete);
+      })
+      .map((s) => {
+        const p = perms[s.key];
+        return {
+          user_id: userId, section: s.key,
+          can_view: p.view, can_add: p.add, can_edit: p.edit, can_delete: p.delete,
+        };
+      });
+    if (rows.length) {
+      const { error } = await (supabase as any).from("user_permissions").insert(rows);
+      if (error) throw error;
+    }
+  }
+
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!form.email || !form.password) throw new Error("ایمیل و رمز عبور الزامی است");
       if (!form.username.trim()) throw new Error("نام کاربری الزامی است");
       if (form.password.length < 6) throw new Error("رمز عبور باید حداقل ۶ کاراکتر باشد");
-      if (selectedRoles.length === 0) throw new Error("حداقل یک نقش انتخاب کنید");
+      const anyView = SECTIONS.some((s) => createPerms[s.key]?.view);
+      if (!anyView) throw new Error("حداقل یک بخش با دسترسی «مشاهده» انتخاب کنید");
 
-      // استفاده از RPC function برای ایجاد کاربر بدون تغییر session
-      const { data: userId, error } = await (supabase as any).rpc("create_user_with_role", {
-        p_email: form.email,
-        p_password: form.password,
-        p_full_name: form.full_name || form.username,
-        p_roles: selectedRoles,
+      const { data, error } = await (supabase as any).functions.invoke("create-user", {
+        body: {
+          email: form.email,
+          password: form.password,
+          full_name: form.full_name || form.username,
+          username: form.username.trim().toLowerCase(),
+          roles: [], // دیگر نقش انتخاب نمی‌کنیم؛ از دسترسی‌ها استفاده می‌کنیم
+        },
       });
-
       if (error) throw error;
-      if (!userId) throw new Error("کاربر ایجاد نشد");
+      if (data?.error) throw new Error(data.error);
+      if (!data?.user_id) throw new Error("کاربر ایجاد نشد");
 
-      // ذخیره نام کاربری در localStorage برای صفحه ورود
+      await savePerms(data.user_id, createPerms);
+
       try {
         const extra = JSON.parse(localStorage.getItem("username_map") ?? "{}");
         extra[form.username.trim().toLowerCase()] = form.email;
@@ -97,36 +135,28 @@ export default function UsersPage() {
       qc.invalidateQueries({ queryKey: ["users-list"] });
       setCreateOpen(false);
       setForm({ email: "", password: "", full_name: "", username: "" });
-      setSelectedRoles([]);
+      setCreatePerms(emptyPerms());
     },
     onError: (e: any) => toast.error(e.message ?? "خطا"),
   });
 
-  // ویرایش
   const editMutation = useMutation({
     mutationFn: async () => {
       if (!editUser) return;
       await (supabase as any).from("profiles").update({ full_name: editName || null }).eq("id", editUser.id);
-      await (supabase as any).from("user_roles").delete().eq("user_id", editUser.id);
-      for (const role of editRoles) {
-        await (supabase as any).from("user_roles").insert({ user_id: editUser.id, role });
-      }
+      await savePerms(editUser.id, editPerms);
     },
     onSuccess: () => {
-      toast.success("ویرایش شد ✓");
+      toast.success("ذخیره شد ✓");
       qc.invalidateQueries({ queryKey: ["users-list"] });
       setEditOpen(false);
     },
     onError: (e: any) => toast.error(e.message ?? "خطا"),
   });
 
-  // فعال/غیرفعال
   const toggleActiveMutation = useMutation({
     mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
-      const { error } = await (supabase as any)
-        .from("profiles")
-        .update({ is_active: isActive })
-        .eq("id", userId);
+      const { error } = await (supabase as any).from("profiles").update({ is_active: isActive }).eq("id", userId);
       if (error) throw error;
     },
     onSuccess: (_, vars) => {
@@ -136,9 +166,9 @@ export default function UsersPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  // حذف کاربر (فقط از profiles و user_roles — auth.users نیاز به admin API دارد)
   const deleteMutation = useMutation({
     mutationFn: async (userId: string) => {
+      await (supabase as any).from("user_permissions").delete().eq("user_id", userId);
       await (supabase as any).from("user_roles").delete().eq("user_id", userId);
       const { error } = await (supabase as any).from("profiles").delete().eq("id", userId);
       if (error) throw error;
@@ -150,48 +180,92 @@ export default function UsersPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const deleteRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      const { error } = await (supabase as any).from("user_roles")
-        .delete().eq("user_id", userId).eq("role", role);
-      if (error) throw error;
-    },
-    onSuccess: () => { toast.success("نقش حذف شد"); qc.invalidateQueries({ queryKey: ["users-list"] }); },
-    onError: (e: any) => toast.error(e.message),
-  });
-
   function openEdit(u: any) {
-    setEditUser(u); setEditName(u.full_name ?? ""); setEditRoles([...u.roles]); setEditOpen(true);
+    setEditUser(u);
+    setEditName(u.full_name ?? "");
+    setEditPerms(emptyPerms());
+    setEditOpen(true);
   }
 
-  function toggleRole(role: string, list: string[], setList: (v: string[]) => void) {
-    setList(list.includes(role) ? list.filter(r => r !== role) : [...list, role]);
+  function togglePerm(perms: PermsState, setter: (p: PermsState) => void, section: string, action: PermAction) {
+    const next = { ...perms, [section]: { ...perms[section], [action]: !perms[section][action] } };
+    // اگر افزودن/ویرایش/حذف فعال شد، مشاهده هم اتومات فعال شود
+    if (action !== "view" && next[section][action]) next[section].view = true;
+    setter(next);
+  }
+
+  function setAllForSection(perms: PermsState, setter: (p: PermsState) => void, section: string, value: boolean) {
+    setter({ ...perms, [section]: { view: value, add: value, edit: value, delete: value } });
+  }
+
+  function setAllPerms(setter: (p: PermsState) => void, value: boolean) {
+    const next: PermsState = {};
+    for (const s of SECTIONS) next[s.key] = { view: value, add: value, edit: value, delete: value };
+    setter(next);
+  }
+
+  function PermsMatrix({ perms, setter }: { perms: PermsState; setter: (p: PermsState) => void }) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <Label className="flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> دسترسی به بخش‌ها</Label>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setAllPerms(setter, true)}>انتخاب همه</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setAllPerms(setter, false)}>پاک کردن</Button>
+          </div>
+        </div>
+        <div className="border rounded-lg overflow-hidden">
+          <div className="max-h-80 overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-muted z-10">
+                <TableRow>
+                  <TableHead className="text-right">بخش</TableHead>
+                  {ACTIONS.map((a) => <TableHead key={a.key} className="text-center w-20">{a.label}</TableHead>)}
+                  <TableHead className="text-center w-16">همه</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {SECTIONS.map((s) => {
+                  const p = perms[s.key];
+                  const allChecked = p.view && p.add && p.edit && p.delete;
+                  return (
+                    <TableRow key={s.key}>
+                      <TableCell className="font-medium text-sm">{s.label}</TableCell>
+                      {ACTIONS.map((a) => (
+                        <TableCell key={a.key} className="text-center">
+                          <Checkbox
+                            checked={p[a.key]}
+                            onCheckedChange={() => togglePerm(perms, setter, s.key, a.key)}
+                          />
+                        </TableCell>
+                      ))}
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={allChecked}
+                          onCheckedChange={(v) => setAllForSection(perms, setter, s.key, !!v)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          فعال‌سازی «افزودن/ویرایش/حذف» به‌صورت خودکار «مشاهده» را نیز فعال می‌کند.
+        </p>
+      </div>
+    );
   }
 
   return (
     <div>
       <PageHeader
-        title="مدیریت کاربران"
-        description="ایجاد کاربران و تعیین نقش‌ها"
+        title="مدیریت کاربران و دسترسی‌ها"
+        description="ایجاد کاربر و تعیین دسترسی هر بخش به‌صورت تیک‌وار"
         action={<Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> کاربر جدید</Button>}
       />
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-5">
-        {ROLES.map(r => (
-          <button key={r.value}
-            onClick={() => setShowRoleInfo(showRoleInfo === r.value ? null : r.value)}
-            className={`rounded-lg border p-2 text-xs font-medium text-right transition-all ${r.color} ${showRoleInfo === r.value ? "ring-2 ring-offset-1 ring-current" : ""}`}>
-            <Shield className="w-3 h-3 inline ml-1" />{r.label}
-          </button>
-        ))}
-      </div>
-
-      {showRoleInfo && (
-        <Card className="p-4 mb-5 border-dashed">
-          <p className="font-semibold text-sm mb-2">دسترسی‌های «{ROLES.find(r => r.value === showRoleInfo)?.label}»:</p>
-          <ul className="space-y-1">{ROLES.find(r => r.value === showRoleInfo)?.permissions.map((p, i) => <li key={i} className="text-xs">{p}</li>)}</ul>
-        </Card>
-      )}
 
       <Card className="overflow-hidden">
         {isLoading ? (
@@ -205,7 +279,7 @@ export default function UsersPage() {
                 <TableRow>
                   <TableHead className="text-right">نام کاربر</TableHead>
                   <TableHead className="text-right">وضعیت</TableHead>
-                  <TableHead className="text-right">نقش‌ها</TableHead>
+                  <TableHead className="text-right">تعداد بخش‌های قابل مشاهده</TableHead>
                   <TableHead className="text-left">عملیات</TableHead>
                 </TableRow>
               </TableHeader>
@@ -229,26 +303,13 @@ export default function UsersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {u.roles.length === 0 && <span className="text-xs text-muted-foreground">بدون نقش</span>}
-                        {u.roles.map((role: string) => (
-                          <div key={role} className="flex items-center gap-0.5">
-                            <RoleBadge role={role} />
-                            <button className="text-muted-foreground hover:text-destructive ml-0.5"
-                              onClick={() => { if (confirm(`نقش "${ROLES.find(r => r.value === role)?.label}" حذف شود؟`)) deleteRoleMutation.mutate({ userId: u.id, role }); }}>
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                      <Badge variant="outline">{u.section_count} بخش</Badge>
                     </TableCell>
                     <TableCell className="text-left">
                       <div className="flex gap-1 justify-end">
-                        {/* ویرایش */}
-                        <Button size="icon" variant="ghost" title="ویرایش" onClick={() => openEdit(u)}>
+                        <Button size="icon" variant="ghost" title="ویرایش دسترسی‌ها" onClick={() => openEdit(u)}>
                           <Pencil className="w-4 h-4" />
                         </Button>
-                        {/* فعال/غیرفعال */}
                         <Button size="icon" variant="ghost"
                           title={u.is_active ? "غیرفعال کردن" : "فعال کردن"}
                           onClick={() => toggleActiveMutation.mutate({ userId: u.id, isActive: !u.is_active })}>
@@ -256,7 +317,6 @@ export default function UsersPage() {
                             ? <UserX className="w-4 h-4 text-orange-500" />
                             : <UserCheck className="w-4 h-4 text-green-600" />}
                         </Button>
-                        {/* حذف */}
                         <Button size="icon" variant="ghost" title="حذف کاربر"
                           onClick={() => { if (confirm("این کاربر حذف شود؟ این عمل قابل بازگشت نیست.")) deleteMutation.mutate(u.id); }}>
                           <Trash2 className="w-4 h-4 text-destructive" />
@@ -273,31 +333,21 @@ export default function UsersPage() {
 
       {/* دیالوگ ایجاد */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCog className="w-5 h-5" /> کاربر جدید</DialogTitle></DialogHeader>
-          <form className="space-y-4" onSubmit={e => { e.preventDefault(); createMutation.mutate(); }}>
-            <div><Label>نام کامل</Label><Input value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} placeholder="مثال: احمد محمدی" /></div>
-            <div>
-              <Label>نام کاربری <span className="text-destructive">*</span></Label>
-              <Input value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} placeholder="مثال: ahmad" dir="ltr" required />
-              <p className="text-xs text-muted-foreground mt-1">با این نام در صفحه ورود وارد می‌شود</p>
-            </div>
-            <div><Label>ایمیل <span className="text-destructive">*</span></Label><Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="example@school.com" dir="ltr" required /></div>
-            <div><Label>رمز عبور <span className="text-destructive">*</span></Label><Input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="حداقل ۶ کاراکتر" dir="ltr" required /></div>
-            <div>
-              <Label className="mb-2 block">نقش‌ها <span className="text-destructive">*</span></Label>
-              <div className="space-y-1.5">
-                {ROLES.map(r => (
-                  <div key={r.value} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/30">
-                    <Checkbox id={`cr-${r.value}`} checked={selectedRoles.includes(r.value)} onCheckedChange={() => toggleRole(r.value, selectedRoles, setSelectedRoles)} />
-                    <label htmlFor={`cr-${r.value}`} className="cursor-pointer flex items-center gap-2 flex-1">
-                      <span className={`text-xs px-2 py-0.5 rounded border font-medium ${r.color}`}>{r.label}</span>
-                      <span className="text-xs text-muted-foreground truncate">{r.permissions[0]}</span>
-                    </label>
-                  </div>
-                ))}
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div><Label>نام کامل</Label><Input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} placeholder="مثال: احمد محمدی" /></div>
+              <div>
+                <Label>نام کاربری <span className="text-destructive">*</span></Label>
+                <Input value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))} placeholder="مثال: ahmad" dir="ltr" required />
               </div>
+              <div><Label>ایمیل <span className="text-destructive">*</span></Label><Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="example@school.com" dir="ltr" required /></div>
+              <div><Label>رمز عبور <span className="text-destructive">*</span></Label><Input type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder="حداقل ۶ کاراکتر" dir="ltr" required /></div>
             </div>
+
+            <PermsMatrix perms={createPerms} setter={setCreatePerms} />
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>انصراف</Button>
               <Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin ml-2" />}ایجاد کاربر</Button>
@@ -308,24 +358,11 @@ export default function UsersPage() {
 
       {/* دیالوگ ویرایش */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Pencil className="w-5 h-5" /> ویرایش کاربر</DialogTitle></DialogHeader>
-          <form className="space-y-4" onSubmit={e => { e.preventDefault(); editMutation.mutate(); }}>
-            <div><Label>نام کامل</Label><Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="نام کامل" /></div>
-            <div>
-              <Label className="mb-2 block">نقش‌ها</Label>
-              <div className="space-y-1.5">
-                {ROLES.map(r => (
-                  <div key={r.value} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/30">
-                    <Checkbox id={`er-${r.value}`} checked={editRoles.includes(r.value)} onCheckedChange={() => toggleRole(r.value, editRoles, setEditRoles)} />
-                    <label htmlFor={`er-${r.value}`} className="cursor-pointer flex items-center gap-2 flex-1">
-                      <span className={`text-xs px-2 py-0.5 rounded border font-medium ${r.color}`}>{r.label}</span>
-                      <span className="text-xs text-muted-foreground truncate">{r.permissions[0]}</span>
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Pencil className="w-5 h-5" /> ویرایش دسترسی‌ها</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); editMutation.mutate(); }}>
+            <div><Label>نام کامل</Label><Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="نام کامل" /></div>
+            <PermsMatrix perms={editPerms} setter={setEditPerms} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>انصراف</Button>
               <Button type="submit" disabled={editMutation.isPending}>{editMutation.isPending && <Loader2 className="w-4 h-4 animate-spin ml-2" />}ذخیره</Button>

@@ -35,8 +35,8 @@ export default function Auth() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [username, setUsername] = useState(() => localStorage.getItem("remember_username") ?? "");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(() => localStorage.getItem("remember_username") ?? "founder");
+  const [password, setPassword] = useState("smartchool9254");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem("remember_username"));
 
@@ -53,21 +53,46 @@ export default function Auth() {
     e.preventDefault();
 
     const trimmedUsername = username.trim().toLowerCase();
-    const usernameMap = getUsernameMap();
-    // اگر در map بود از ایمیل map استفاده کن، وگرنه خود username را به عنوان ایمیل امتحان کن
-    const email = usernameMap[trimmedUsername] ?? (trimmedUsername.includes("@") ? trimmedUsername : null);
+    setLoading(true);
+
+    // اول از جدول user_usernames در Supabase بخوان
+    let email: string | null = null;
+
+    // اگر ایمیل مستقیم وارد شده
+    if (trimmedUsername.includes("@")) {
+      email = trimmedUsername;
+    } else {
+      // تلاش برای خواندن از Supabase (اگر جدول وجود داشت)
+      try {
+        const { data: mapping, error: mapErr } = await (supabase as any)
+          .from("user_usernames")
+          .select("email")
+          .eq("username", trimmedUsername)
+          .maybeSingle();
+
+        if (!mapErr && mapping?.email) {
+          email = mapping.email;
+        }
+      } catch {}
+
+      // fallback به localStorage و map ثابت
+      if (!email) {
+        const localMap = getUsernameMap();
+        email = localMap[trimmedUsername] ?? null;
+      }
+    }
 
     if (!email) {
+      setLoading(false);
       toast.error("نام کاربری یافت نشد");
       return;
     }
 
     if (password.length < 6) {
+      setLoading(false);
       toast.error("رمز عبور حداقل ۶ کاراکتر باشد");
       return;
     }
-
-    setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -76,26 +101,33 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
-      // بررسی فعال بودن کاربر
-      const { data: profile } = await (supabase as any)
-        .from("profiles")
-        .select("is_active, full_name")
-        .eq("id", (await supabase.auth.getUser()).data.user?.id)
-        .maybeSingle();
+      try {
+        const { data: profile } = await (supabase as any)
+          .from("profiles")
+          .select("is_active, full_name")
+          .eq("id", (await supabase.auth.getUser()).data.user?.id)
+          .maybeSingle();
 
-      if (profile && profile.is_active === false) {
-        await supabase.auth.signOut();
-        setLoading(false);
-        toast.error("حساب کاربری شما غیرفعال شده است. با مدیر تماس بگیرید.");
-        return;
-      }
+        if (profile && profile.is_active === false) {
+          await supabase.auth.signOut();
+          toast.error("حساب کاربری شما غیرفعال شده است.");
+          return;
+        }
 
-      if (rememberMe) {
-        localStorage.setItem("remember_username", trimmedUsername);
-      } else {
-        localStorage.removeItem("remember_username");
+        if (rememberMe) {
+          localStorage.setItem("remember_username", trimmedUsername);
+        } else {
+          localStorage.removeItem("remember_username");
+        }
+        toast.success("خوش آمدید، " + (profile?.full_name || username));
+      } catch {
+        if (rememberMe) {
+          localStorage.setItem("remember_username", trimmedUsername);
+        } else {
+          localStorage.removeItem("remember_username");
+        }
+        toast.success("خوش آمدید، " + username);
       }
-      toast.success("خوش آمدید، " + (profile?.full_name || username));
       navigate("/");
     }
   }

@@ -1,17 +1,21 @@
 import { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
-import { Loader2 } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">در حال بارگذاری...</div>
       </div>
     );
   }
-  if (!user) return <Navigate to="/auth" replace />;
+
+  if (!user) {
+    return <Navigate to="/auth" />;
+  }
+
   return <>{children}</>;
 }

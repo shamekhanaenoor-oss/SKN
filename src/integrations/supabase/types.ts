@@ -181,6 +181,7 @@ export type Database = {
           borrower_student_id: string | null
           borrower_teacher_id: string | null
           created_at: string
+          document_name: string | null
           due_date: string
           fine_amount: number | null
           id: string
@@ -194,6 +195,7 @@ export type Database = {
           borrower_student_id?: string | null
           borrower_teacher_id?: string | null
           created_at?: string
+          document_name?: string | null
           due_date: string
           fine_amount?: number | null
           id?: string
@@ -207,6 +209,7 @@ export type Database = {
           borrower_student_id?: string | null
           borrower_teacher_id?: string | null
           created_at?: string
+          document_name?: string | null
           due_date?: string
           fine_amount?: number | null
           id?: string
@@ -238,6 +241,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      card_templates: {
+        Row: {
+          category: string
+          created_at: string
+          template: Json
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          template: Json
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          template?: Json
+          updated_at?: string
+        }
+        Relationships: []
       }
       class_fees: {
         Row: {
@@ -277,6 +301,7 @@ export type Database = {
           academic_year_id: string | null
           capacity: number | null
           created_at: string
+          fee_amount: number | null
           grade_id: string | null
           homeroom_teacher_id: string | null
           id: string
@@ -289,6 +314,7 @@ export type Database = {
           academic_year_id?: string | null
           capacity?: number | null
           created_at?: string
+          fee_amount?: number | null
           grade_id?: string | null
           homeroom_teacher_id?: string | null
           id?: string
@@ -301,6 +327,7 @@ export type Database = {
           academic_year_id?: string | null
           capacity?: number | null
           created_at?: string
+          fee_amount?: number | null
           grade_id?: string | null
           homeroom_teacher_id?: string | null
           id?: string
@@ -524,6 +551,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      expenses: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string
+          description: string | null
+          expense_date: string
+          id: string
+          paid_to: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          expense_date?: string
+          id?: string
+          paid_to?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          expense_date?: string
+          id?: string
+          paid_to?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       fee_types: {
         Row: {
@@ -772,53 +835,84 @@ export type Database = {
       payments: {
         Row: {
           amount: number
+          book_id: string | null
+          book_sale_amount: number
           created_at: string
           due_date: string | null
           fee_type_id: string | null
           id: string
+          id_card_fee: number
           notes: string | null
           paid_amount: number | null
           payment_date: string
           payment_method: string | null
+          payment_month: number | null
+          payment_year: number | null
           receipt_number: string | null
           recorded_by: string | null
           status: Database["public"]["Enums"]["payment_status"]
           student_id: string
+          transport_fee: number
+          uniform_id: string | null
+          uniform_sale_amount: number
           updated_at: string
         }
         Insert: {
           amount: number
+          book_id?: string | null
+          book_sale_amount?: number
           created_at?: string
           due_date?: string | null
           fee_type_id?: string | null
           id?: string
+          id_card_fee?: number
           notes?: string | null
           paid_amount?: number | null
           payment_date?: string
           payment_method?: string | null
+          payment_month?: number | null
+          payment_year?: number | null
           receipt_number?: string | null
           recorded_by?: string | null
           status?: Database["public"]["Enums"]["payment_status"]
           student_id: string
+          transport_fee?: number
+          uniform_id?: string | null
+          uniform_sale_amount?: number
           updated_at?: string
         }
         Update: {
           amount?: number
+          book_id?: string | null
+          book_sale_amount?: number
           created_at?: string
           due_date?: string | null
           fee_type_id?: string | null
           id?: string
+          id_card_fee?: number
           notes?: string | null
           paid_amount?: number | null
           payment_date?: string
           payment_method?: string | null
+          payment_month?: number | null
+          payment_year?: number | null
           receipt_number?: string | null
           recorded_by?: string | null
           status?: Database["public"]["Enums"]["payment_status"]
           student_id?: string
+          transport_fee?: number
+          uniform_id?: string | null
+          uniform_sale_amount?: number
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "payments_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "library_books"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "payments_fee_type_id_fkey"
             columns: ["fee_type_id"]
@@ -833,6 +927,13 @@ export type Database = {
             referencedRelation: "students"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "payments_uniform_id_fkey"
+            columns: ["uniform_id"]
+            isOneToOne: false
+            referencedRelation: "uniforms"
+            referencedColumns: ["id"]
+          },
         ]
       }
       profiles: {
@@ -841,6 +942,7 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          is_active: boolean
           phone: string | null
           preferred_language: string | null
           updated_at: string
@@ -850,6 +952,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id: string
+          is_active?: boolean
           phone?: string | null
           preferred_language?: string | null
           updated_at?: string
@@ -859,6 +962,7 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          is_active?: boolean
           phone?: string | null
           preferred_language?: string | null
           updated_at?: string
@@ -949,6 +1053,7 @@ export type Database = {
           recorded_by: string | null
           staff_id: string | null
           status: string
+          tax_amount: number
           teacher_id: string | null
           updated_at: string
         }
@@ -968,6 +1073,7 @@ export type Database = {
           recorded_by?: string | null
           staff_id?: string | null
           status?: string
+          tax_amount?: number
           teacher_id?: string | null
           updated_at?: string
         }
@@ -987,6 +1093,7 @@ export type Database = {
           recorded_by?: string | null
           staff_id?: string | null
           status?: string
+          tax_amount?: number
           teacher_id?: string | null
           updated_at?: string
         }
@@ -1049,6 +1156,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      school_profile: {
+        Row: {
+          address: string | null
+          aisa_license: string | null
+          created_at: string
+          founder_whatsapp: string | null
+          id: string
+          maarif_license: string | null
+          phone: string | null
+          sanafi_license: string | null
+          school_code: string | null
+          school_name: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          aisa_license?: string | null
+          created_at?: string
+          founder_whatsapp?: string | null
+          id?: string
+          maarif_license?: string | null
+          phone?: string | null
+          sanafi_license?: string | null
+          school_code?: string | null
+          school_name?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          aisa_license?: string | null
+          created_at?: string
+          founder_whatsapp?: string | null
+          id?: string
+          maarif_license?: string | null
+          phone?: string | null
+          sanafi_license?: string | null
+          school_code?: string | null
+          school_name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       staff: {
         Row: {
@@ -1162,6 +1311,8 @@ export type Database = {
           reason: string | null
           start_date: string
           student_id: string
+          transport_discount_type: string | null
+          transport_discount_value: number | null
           updated_at: string
           value: number
         }
@@ -1177,6 +1328,8 @@ export type Database = {
           reason?: string | null
           start_date?: string
           student_id: string
+          transport_discount_type?: string | null
+          transport_discount_value?: number | null
           updated_at?: string
           value?: number
         }
@@ -1192,6 +1345,8 @@ export type Database = {
           reason?: string | null
           start_date?: string
           student_id?: string
+          transport_discount_type?: string | null
+          transport_discount_value?: number | null
           updated_at?: string
           value?: number
         }
@@ -1345,12 +1500,15 @@ export type Database = {
           current_class_id: string | null
           date_of_birth: string | null
           district: string | null
+          enrollment_type: string
           father_name: string | null
+          father_phone: string | null
           full_name: string
           gender: Database["public"]["Enums"]["gender_type"] | null
           grandfather_name: string | null
           id: string
           is_active: boolean
+          mother_phone: string | null
           national_id: string | null
           notes: string | null
           phone: string | null
@@ -1361,6 +1519,7 @@ export type Database = {
           updated_at: string
           user_id: string | null
           village: string | null
+          whatsapp_number: string | null
         }
         Insert: {
           address?: string | null
@@ -1370,12 +1529,15 @@ export type Database = {
           current_class_id?: string | null
           date_of_birth?: string | null
           district?: string | null
+          enrollment_type?: string
           father_name?: string | null
+          father_phone?: string | null
           full_name: string
           gender?: Database["public"]["Enums"]["gender_type"] | null
           grandfather_name?: string | null
           id?: string
           is_active?: boolean
+          mother_phone?: string | null
           national_id?: string | null
           notes?: string | null
           phone?: string | null
@@ -1386,6 +1548,7 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
           village?: string | null
+          whatsapp_number?: string | null
         }
         Update: {
           address?: string | null
@@ -1395,12 +1558,15 @@ export type Database = {
           current_class_id?: string | null
           date_of_birth?: string | null
           district?: string | null
+          enrollment_type?: string
           father_name?: string | null
+          father_phone?: string | null
           full_name?: string
           gender?: Database["public"]["Enums"]["gender_type"] | null
           grandfather_name?: string | null
           id?: string
           is_active?: boolean
+          mother_phone?: string | null
           national_id?: string | null
           notes?: string | null
           phone?: string | null
@@ -1411,6 +1577,7 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
           village?: string | null
+          whatsapp_number?: string | null
         }
         Relationships: [
           {
@@ -1627,6 +1794,60 @@ export type Database = {
         }
         Relationships: []
       }
+      uniform_sales: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          quantity: number
+          sale_date: string
+          student_id: string | null
+          total_amount: number
+          uniform_id: string
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+          sale_date?: string
+          student_id?: string | null
+          total_amount?: number
+          uniform_id: string
+          unit_price?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+          sale_date?: string
+          student_id?: string | null
+          total_amount?: number
+          uniform_id?: string
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "uniform_sales_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "uniform_sales_uniform_id_fkey"
+            columns: ["uniform_id"]
+            isOneToOne: false
+            referencedRelation: "uniforms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       uniforms: {
         Row: {
           color: string | null
@@ -1637,6 +1858,7 @@ export type Database = {
           is_active: boolean
           name: string
           price: number
+          purchase_price: number
           size: string | null
           stock: number
           updated_at: string
@@ -1650,6 +1872,7 @@ export type Database = {
           is_active?: boolean
           name: string
           price?: number
+          purchase_price?: number
           size?: string | null
           stock?: number
           updated_at?: string
@@ -1663,9 +1886,43 @@ export type Database = {
           is_active?: boolean
           name?: string
           price?: number
+          purchase_price?: number
           size?: string | null
           stock?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      user_permissions: {
+        Row: {
+          can_add: boolean
+          can_delete: boolean
+          can_edit: boolean
+          can_view: boolean
+          created_at: string
+          section: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_add?: boolean
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string
+          section: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_add?: boolean
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string
+          section?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1687,6 +1944,27 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      user_usernames: {
+        Row: {
+          created_at: string
+          email: string
+          user_id: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          user_id: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          user_id?: string
+          username?: string
         }
         Relationships: []
       }

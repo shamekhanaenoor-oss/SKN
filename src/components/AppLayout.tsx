@@ -9,53 +9,54 @@ import {
   CalendarDays, Megaphone, ScrollText, Shirt, Award, IdCard, Link2, Percent, ListOrdered, BookMarked, TrendingDown, TrendingUp
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSchoolProfile } from "@/lib/school-profile";
 
-interface NavItem { to: string; label: string; icon: typeof LayoutDashboard; }
+interface NavItem { to: string; label: string; icon: typeof LayoutDashboard; section: string; }
 
 const navItems: NavItem[] = [
-  { to: "/", label: "داشبورد", icon: LayoutDashboard },
-  // ترتیب اولویت
-  { to: "/student-list", label: "لست متعلمین", icon: ListOrdered },
-  { to: "/students", label: "شاگردان", icon: Users },
-  { to: "/discounts", label: "تخفیف", icon: Percent },
-  { to: "/payments", label: "پرداخت فیس", icon: Wallet },
-  { to: "/accounting", label: "تاریخچه حسابی", icon: BookMarked },
-  { to: "/revenue",    label: "عواید مکتب",    icon: TrendingUp },
-  { to: "/expenses",   label: "مصارف‌ها",      icon: TrendingDown },
-  { to: "/salary-payments", label: "پرداخت معاشات", icon: Wallet },
-  { to: "/classes", label: "صنف‌ها", icon: School },
-  { to: "/library-books", label: "کتاب‌ها", icon: Library },
-  { to: "/uniforms", label: "یونیفورم‌ها", icon: Shirt },
-  { to: "/teachers", label: "معلمان", icon: UserCog },
-  { to: "/staff", label: "کارمندان", icon: Users },
-  { to: "/staff-points", label: "تشویق و اخطاری", icon: Award },
-  { to: "/id-cards", label: "کارت هویت", icon: IdCard },
-  { to: "/transport-routes", label: "ترانسپورت", icon: Bus },
-  { to: "/transport-list", label: "لیست ترانسپورت", icon: Bus },
-  // بقیه
-  { to: "/academic-years", label: "سال تحصیلی", icon: CalendarDays },
-  { to: "/subjects", label: "مواد درسی", icon: BookOpen },
-  { to: "/attendance", label: "حضور و غیاب", icon: ClipboardCheck },
-  { to: "/exams", label: "امتحانات", icon: FileText },
-  { to: "/exam-results", label: "نمرات", icon: ScrollText },
-  { to: "/report-cards", label: "کارنامه", icon: FileText },
-  { to: "/book-loans", label: "تسلیم کتاب و اسناد", icon: Library },
-  { to: "/book-loans-history", label: "تاریخچه تسلیم", icon: Library },
-  { to: "/events", label: "رویدادها", icon: Calendar },
-  { to: "/announcements", label: "اطلاعیه‌ها", icon: Megaphone },
-  { to: "/discipline", label: "انضباط", icon: ShieldAlert },
-  { to: "/settings", label: "تنظیمات", icon: Settings },
-  { to: "/users",    label: "ایجاد کاربر", icon: UserCog },
+  { to: "/", label: "داشبورد", icon: LayoutDashboard, section: "dashboard" },
+  { to: "/student-list", label: "لست متعلمین", icon: ListOrdered, section: "student-list" },
+  { to: "/students", label: "شاگردان", icon: Users, section: "students" },
+  { to: "/discounts", label: "تخفیف", icon: Percent, section: "discounts" },
+  { to: "/payments", label: "پرداخت فیس", icon: Wallet, section: "payments" },
+  { to: "/accounting", label: "تاریخچه حسابی", icon: BookMarked, section: "accounting" },
+  { to: "/revenue",    label: "عواید مکتب",    icon: TrendingUp, section: "revenue" },
+  { to: "/expenses",   label: "مصارف‌ها",      icon: TrendingDown, section: "expenses" },
+  { to: "/salary-payments", label: "پرداخت معاشات", icon: Wallet, section: "salary-payments" },
+  { to: "/classes", label: "صنف‌ها", icon: School, section: "classes" },
+  { to: "/library-books", label: "کتاب‌ها", icon: Library, section: "library-books" },
+  { to: "/uniforms", label: "یونیفورم‌ها", icon: Shirt, section: "uniforms" },
+  { to: "/teachers", label: "معلمان", icon: UserCog, section: "teachers" },
+  { to: "/staff", label: "کارمندان", icon: Users, section: "staff" },
+  { to: "/staff-points", label: "تشویق و اخطاری", icon: Award, section: "staff-points" },
+  { to: "/id-cards", label: "کارت هویت", icon: IdCard, section: "id-cards" },
+  { to: "/transport-routes", label: "ترانسپورت", icon: Bus, section: "transport-routes" },
+  { to: "/transport-list", label: "لیست ترانسپورت", icon: Bus, section: "transport-list" },
+  { to: "/academic-years", label: "سال تحصیلی", icon: CalendarDays, section: "academic-years" },
+  { to: "/subjects", label: "مواد درسی", icon: BookOpen, section: "subjects" },
+  { to: "/attendance", label: "حضور و غیاب", icon: ClipboardCheck, section: "attendance" },
+  { to: "/exams", label: "امتحانات", icon: FileText, section: "exams" },
+  { to: "/exam-results", label: "نمرات", icon: ScrollText, section: "exam-results" },
+  { to: "/report-cards", label: "کارنامه", icon: FileText, section: "report-cards" },
+  { to: "/book-loans", label: "تسلیم کتاب و اسناد", icon: Library, section: "book-loans" },
+  { to: "/book-loans-history", label: "تاریخچه تسلیم", icon: Library, section: "book-loans-history" },
+  { to: "/events", label: "رویدادها", icon: Calendar, section: "events" },
+  { to: "/announcements", label: "اطلاعیه‌ها", icon: Megaphone, section: "announcements" },
+  { to: "/discipline", label: "انضباط", icon: ShieldAlert, section: "discipline" },
+  { to: "/settings", label: "تنظیمات", icon: Settings, section: "settings" },
+  { to: "/users",    label: "ایجاد کاربر", icon: UserCog, section: "users" },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { user } = useAuth();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const { can } = usePermissions();
   const { school_name } = useSchoolProfile();
   const navigate = useNavigate();
+
+  const visibleItems = navItems.filter((item) => can(item.section, "view"));
 
   async function handleSignOut() {
     await signOut();
@@ -79,7 +80,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

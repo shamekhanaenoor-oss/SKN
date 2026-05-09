@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DatePickerShamsi from "./DatePickerShamsi";
 import { isoToShamsi, getShamsiMonthName, calcAgeFromIso } from "@/lib/shamsi";import ProvinceDistrictSelector from "./ProvinceDistrictSelector";
+import { usePermissions, tableToSection } from "@/lib/permissions";
 
 export interface FieldDef {
   name: string;
@@ -44,19 +45,23 @@ export interface CrudPageProps {
   displayColumns?: string[];
   searchField?: string;
   orderBy?: string;
-  // برچسب سفارشی برای ستون‌های جدول (مثلاً ستون‌های computed)
   columnLabels?: Record<string, string>;
-  // ستون‌های محاسبه‌شده: کلید = نام ستون، مقدار = تابع محاسبه
   computedColumns?: Record<string, (row: any) => React.ReactNode>;
-  // Optional extra content rendered inside the dialog, after fields.
   formExtras?: (form: Record<string, any>, editingId?: string) => React.ReactNode;
+  // کلید بخش برای کنترل دسترسی (پیش‌فرض از نام جدول استخراج می‌شود)
+  section?: string;
 }
 
 export default function CrudPage({
   table, title, description, fields, displayColumns, searchField, orderBy = "created_at",
-  columnLabels, computedColumns, formExtras,
+  columnLabels, computedColumns, formExtras, section,
 }: CrudPageProps) {
   const qc = useQueryClient();
+  const { can } = usePermissions();
+  const sec = section ?? tableToSection(table);
+  const canAdd = can(sec, "add");
+  const canEdit = can(sec, "edit");
+  const canDelete = can(sec, "delete");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -174,9 +179,11 @@ export default function CrudPage({
         title={title}
         description={description}
         action={
-          <Button onClick={startCreate} className="gap-2">
-            <Plus className="w-4 h-4" /> افزودن
-          </Button>
+          canAdd ? (
+            <Button onClick={startCreate} className="gap-2">
+              <Plus className="w-4 h-4" /> افزودن
+            </Button>
+          ) : null
         }
       />
 
@@ -207,7 +214,7 @@ export default function CrudPage({
                     const label = columnLabels?.[c] ?? f?.label ?? c;
                     return <TableHead key={c} className="text-right">{label}</TableHead>;
                   })}
-                  <TableHead className="text-left">عملیات</TableHead>
+                  {(canEdit || canDelete) && <TableHead className="text-left">عملیات</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -220,17 +227,23 @@ export default function CrudPage({
                           : formatValue(r[c], fields.find(x => x.name === c), refMaps)}
                       </TableCell>
                     ))}
-                    <TableCell className="text-left">
-                      <div className="flex gap-1 justify-end">
-                        <Button size="icon" variant="ghost" onClick={() => startEdit(r)}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost"
-                          onClick={() => { if (confirm("آیا مطمئن هستید؟")) deleteMutation.mutate(r.id); }}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    {(canEdit || canDelete) && (
+                      <TableCell className="text-left">
+                        <div className="flex gap-1 justify-end">
+                          {canEdit && (
+                            <Button size="icon" variant="ghost" onClick={() => startEdit(r)}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button size="icon" variant="ghost"
+                              onClick={() => { if (confirm("آیا مطمئن هستید؟")) deleteMutation.mutate(r.id); }}>
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

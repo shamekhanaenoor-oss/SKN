@@ -1,0 +1,13 @@
+import { createFileRoute } from "@tanstack/react-router";
+import IdCards from "@/pages/IdCards";
+import RequireAuth from "@/components/RequireAuth";
+import RequireAcademicYear from "@/components/RequireAcademicYear";
+import AppLayout from "@/components/AppLayout";
+
+export const Route = createFileRoute("/id-cards")({
+  component: Page,
+});
+
+function Page() {
+  return <RequireAuth><AppLayout><RequireAcademicYear><IdCards /></RequireAcademicYear></AppLayout></RequireAuth>;
+}
